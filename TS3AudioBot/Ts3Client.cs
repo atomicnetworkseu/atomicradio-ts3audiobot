@@ -38,7 +38,7 @@ namespace TS3AudioBot
 		public event EventHandler<TextMessage> OnMessageReceived;
 
 		private static readonly string[] QuitMessages = {
-			"atomicradio.eu/partner", "atomicradio.eu/partner", "atomicradio.eu/partner"
+			"atomicradio.eu/partner"
 		};
 
 		private bool closed = false;
