@@ -155,7 +155,7 @@ namespace TS3AudioBot.Helper
 				request.Timeout = (int)timeout.TotalMilliseconds;
 				if (request is HttpWebRequest httpRequest)
 				{
-					httpRequest.UserAgent = "TS3AudioBot";
+					httpRequest.UserAgent = "ATOMICRADIO/BOT • TEAMSPEAK";
 					httpRequest.KeepAlive = false;
 				}
 				return request;
