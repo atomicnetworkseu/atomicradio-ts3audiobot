@@ -12,10 +12,10 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="D:\Projekte\AtomicRadio\TS3AudioBot\TS3AudioBot\TS3AudioBot.csproj">
+    <ProjectReference Include="D:\Projekte\AtomicRadio\atomicradio-ts3audiobot\TS3AudioBot\TS3AudioBot.csproj">
       <Private>false</Private>
     </ProjectReference>
-    <ProjectReference Include="D:\Projekte\AtomicRadio\TS3AudioBot\TS3Client\TS3Client.csproj">
+    <ProjectReference Include="D:\Projekte\AtomicRadio\atomicradio-ts3audiobot\TS3Client\TS3Client.csproj">
       <Private>false</Private>
     </ProjectReference>
   </ItemGroup>

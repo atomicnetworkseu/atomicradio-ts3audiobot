@@ -1,31 +1,29 @@
-using System;
+using System.Net.Http;
 using System.Collections.Generic;
 using TS3AudioBot;
-using TS3AudioBot.Audio;
 using TS3AudioBot.Plugins;
 using TS3Client.Full;
 using TS3Client.Messages;
-using TS3AudioBot.CommandSystem;
 
 public class AtomicRadio : IBotPlugin
 {
 
 	public Ts3FullClient TS3FullClient { get; set; }
-	public Ts3Client Ts3Client { get; set; }
 	private static NLog.Logger Log;
-	public ulong currentChannel = 0;
-	public Dictionary<ushort, Boolean> listeners;
+	public Dictionary<ushort, ulong> currentChannels;
+	public Dictionary<ushort, List<ushort>> listeners;
+	private HttpClient client = new HttpClient();
 
-
-	public AtomicRadio(PlayManager playManager, Ts3Client ts3Client)
+	public AtomicRadio()
 	{
-		Ts3Client = ts3Client;
 		Log = NLog.LogManager.GetLogger($"TS3AudioBot.Plugins.AtomicRadio"); ;
-		listeners = new Dictionary<ushort, Boolean>();
+		listeners = new Dictionary<ushort, List<ushort>>();
+		currentChannels = new Dictionary<ushort, ulong>();
 	}
 
 	public void Initialize()
 	{
+		updateChannel();
 		TS3FullClient.OnEachClientMoved += OnEachClientMoved;
 		TS3FullClient.OnEachClientEnterView += OnEachClientEnterView;
 		TS3FullClient.OnEachClientLeftView += OnEachClientLeftView;
@@ -39,118 +37,112 @@ public class AtomicRadio : IBotPlugin
 		TS3FullClient.OnEachClientLeftView -= OnEachClientLeftView;
 	}
 
+	private void updateChannel(ushort botId = 0, ulong channelId = 0)
+	{
+		if(channelId == 0)
+		{
+			channelId = TS3FullClient.WhoAmI().Value.ChannelId;
+		}
+		if (botId == 0)
+		{
+			botId = TS3FullClient.WhoAmI().Value.ClientId;
+		}
+
+		ulong botChannel;
+		if(!currentChannels.TryGetValue(botId, out botChannel))
+		{
+			currentChannels.Add(botId, channelId);
+		} else
+		{
+			currentChannels[botId] = channelId;
+		}
+
+		List<ushort> botListeners;
+		if(!listeners.TryGetValue(botId, out botListeners))
+		{
+			listeners.Add(botId, new List<ushort>());
+			return;
+		}
+
+		botListeners.Clear();
+		sendUpdate();
+	}
+
+	private void sendUpdate()
+	{
+		var currentListeners = listeners[TS3FullClient.ClientId];
+		var values = new Dictionary<string, string> { { "type", "teamspeak" }, { "botId", "" + TS3FullClient.WhoAmI().Value.ClientId }, { "value", "" + currentListeners.Count } };
+		client.PostAsync("https://api.atomicradio.eu/channels/listeners?token=Btz7asgakNLBXFT5n4wu9SemF6hvuT", new FormUrlEncodedContent(values));
+	}
+
 	private void OnEachClientLeftView(object sender, ClientLeftView e)
 	{
-		Ts3FullClient senderClient = (Ts3FullClient)sender;
-		if (senderClient.ClientId == e.ClientId)
-		{
-			listeners.Clear();
-			return;
-		}
-
-		var client = Ts3Client.GetCachedClientById(e.ClientId).Value;
-		if (client == null)
+		if (e.ClientId == TS3FullClient.ClientId)
 		{
 			return;
 		}
-		if (client.Uid == null)
+		ulong currentChannel;
+		if(!currentChannels.TryGetValue(TS3FullClient.ClientId, out currentChannel))
 		{
 			return;
 		}
 
-		if (listeners.ContainsKey(e.ClientId))
+		var currentListeners = listeners[TS3FullClient.ClientId];
+		if (e.SourceChannelId == currentChannel)
 		{
-			listeners.Remove(e.ClientId);
-			//Log.Info(listeners.Count);
+			currentListeners.Remove(e.ClientId);
+			sendUpdate();
+			//Log.Info("atomicradio: OnEachClientLeftView: {} {} {}", e.ClientId, e.TargetChannelId, currentListeners.Count);
 		}
 	}
 
 	private void OnEachClientEnterView(object sender, ClientEnterView e)
 	{
-		Ts3FullClient senderClient = (Ts3FullClient)sender;
-		var botClient = Ts3Client.GetCachedClientById(senderClient.ClientId).Value;
-		if(currentChannel == 0)
-		{
-			listeners.Clear();
-			currentChannel = e.TargetChannelId;
-		}
-		if (senderClient.ClientId == e.ClientId)
-		{
-			listeners.Clear();
-			currentChannel = e.TargetChannelId;
-			return;
-		}
-
-		var client = Ts3Client.GetCachedClientById(e.ClientId).Value;
-
-		if (client == null)
+		if(e.ClientId == TS3FullClient.ClientId)
 		{
 			return;
 		}
-		if (client.Uid == null)
+		ulong currentChannel;
+		if (!currentChannels.TryGetValue(TS3FullClient.ClientId, out currentChannel))
 		{
 			return;
 		}
-
-		if (currentChannel != e.TargetChannelId)
+		var currentListeners = listeners[TS3FullClient.ClientId];
+		if (e.TargetChannelId == currentChannel)
 		{
-			if (listeners.ContainsKey(e.ClientId))
-			{
-				listeners.Remove(e.ClientId);
-				//Log.Info(listeners.Count);
-				return;
-			}
+			currentListeners.Add(e.ClientId);
+			sendUpdate();
+			//Log.Info("atomicradio: OnEachClientEnterView: {} {} {}", e.ClientId, e.TargetChannelId, currentListeners.Count);
 		}
-
-		if (!listeners.ContainsKey(e.ClientId))
-		{
-			listeners.Add(e.ClientId, true);
-		}
-		//Log.Info(listeners.Count);
 	}
 
 	private void OnEachClientMoved(object sender, ClientMoved e)
 	{
-		Ts3FullClient senderClient = (Ts3FullClient)sender;
-		var botClient = Ts3Client.GetCachedClientById(senderClient.ClientId).Value;
-		if (currentChannel == 0)
+		if (e.ClientId == TS3FullClient.ClientId)
 		{
-			listeners.Clear();
-			currentChannel = e.TargetChannelId;
-		}
-		if (senderClient.ClientId == e.ClientId)
-		{
-			listeners.Clear();
-			currentChannel = e.TargetChannelId;
+			updateChannel(e.ClientId, e.TargetChannelId);
 			return;
 		}
-
-		if (currentChannel != e.TargetChannelId)
+		ulong currentChannel;
+		if (!currentChannels.TryGetValue(TS3FullClient.ClientId, out currentChannel))
 		{
-			if(listeners.ContainsKey(e.ClientId))
+			return;
+		}
+		var currentListeners = listeners[TS3FullClient.ClientId];
+		var hasClient = currentListeners.Contains(e.ClientId);
+		if (e.TargetChannelId == currentChannel)
+		{
+			if(!hasClient)
 			{
-				listeners.Remove(e.ClientId);
-				//Log.Info(listeners.Count);
-				return;
+				currentListeners.Add(e.ClientId);
+				sendUpdate();
 			}
-		}
-
-		if (!listeners.ContainsKey(e.ClientId))
+		} else if(hasClient)
 		{
-			listeners.Add(e.ClientId, true);
+			currentListeners.Remove(e.ClientId);
+			sendUpdate();
 		}
-		//Log.Info(listeners.Count);
-	}
-
-	[Command("listeners")]
-	public string ListenerCommand()
-	{
-		if(listeners == null)
-		{
-			return "0";
-		}
-		Log.Info(currentChannel);
-		return "" + listeners.Count;
+		//Log.Info("atomicradio: OnEachClientMoved: {} {} {}", e.ClientId, e.TargetChannelId, currentListeners.Count);
 	}
 
 }
