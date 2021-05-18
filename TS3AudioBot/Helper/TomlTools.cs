@@ -7,47 +7,47 @@
 // You should have received a copy of the Open Software License along with this
 // program. If not, see <https://opensource.org/licenses/OSL-3.0>.
 
+using Nett;
+using Newtonsoft.Json;
+using System;
+using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
+using System.IO;
+using System.Linq;
+using System.Text;
+
 namespace TS3AudioBot.Helper
 {
-	using Nett;
-	using Newtonsoft.Json;
-	using System;
-	using System.Collections.Generic;
-	using System.IO;
-	using System.Linq;
-	using System.Text;
-	using System.Text.RegularExpressions;
-	using System.Xml;
-
 	public static class TomlTools
 	{
-		private static readonly Regex TimeReg = new Regex(@"^(?:(\d+)d)?(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?(?:(\d+)ms)?$", Util.DefaultRegexConfig);
-
 		// *** Convenience method for getting values out of a toml object. ***
 
-		public static T[] TryGetValueArray<T>(this TomlObject tomlObj)
+		public static bool TryGetValueArray<T>(this TomlObject tomlObj, [NotNullWhen(true)] out T[]? value) where T : notnull
 		{
 			if (tomlObj.TomlType == TomlObjectType.Array)
 			{
 				var tomlArray = (TomlArray)tomlObj;
-				var retArr = new T[tomlArray.Length];
+				value = new T[tomlArray.Length];
 				for (int i = 0; i < tomlArray.Length; i++)
 				{
-					if (!tomlArray.Items[i].TryGetValue(out retArr[i]))
+					if (!tomlArray.Items[i].TryGetValue(out value[i]!))
 					{
-						return null;
+						value = null;
+						return false;
 					}
 				}
-				return retArr;
+				return true;
 			}
 			else if (tomlObj.TryGetValue(out T retSingleVal))
 			{
-				return new[] { retSingleVal };
+				value = new[] { retSingleVal };
+				return true;
 			}
-			return null;
+			value = null;
+			return false;
 		}
 
-		public static bool TryGetValue<T>(this TomlObject tomlObj, out T value)
+		public static bool TryGetValue<T>(this TomlObject tomlObj, [MaybeNullWhen(false)] out T value) where T : notnull
 		{
 			switch (tomlObj.TomlType)
 			{
@@ -123,60 +123,25 @@ namespace TS3AudioBot.Helper
 				}
 				else if (typeof(T) == typeof(TimeSpan))
 				{
-					try
+					var timeSpanMaybe = TextUtil.ParseTime(((TomlString)tomlObj).Value);
+					if (timeSpanMaybe != null)
 					{
-						value = (T)(object)ParseTime(((TomlString)tomlObj).Value);
+						value = (T)(object)timeSpanMaybe.Value;
 						return true;
 					}
-					catch (FormatException) { }
 				}
 				break;
 			}
-			value = default;
+			value = default!;
 			return false;
-		}
-
-		public static TimeSpan? ParseTime(string value)
-		{
-			int AsNum(string svalue)
-			{
-				if (string.IsNullOrEmpty(svalue))
-					return 0;
-				return int.TryParse(svalue, out var num) ? num : 0;
-			}
-
-			var match = TimeReg.Match(value);
-			if (match.Success)
-			{
-				try
-				{
-					return new TimeSpan(
-						AsNum(match.Groups[1].Value),
-						AsNum(match.Groups[2].Value),
-						AsNum(match.Groups[3].Value),
-						AsNum(match.Groups[4].Value),
-						AsNum(match.Groups[5].Value));
-				}
-				catch { }
-			}
-
-			try { return XmlConvert.ToTimeSpan(value); }
-			catch (FormatException) { }
-
-			return null;
-		}
-
-		public static E<string> ValidateTime(string value)
-		{
-			if (TimeReg.IsMatch(value))
-				return R.Ok;
-			return $"Value '{value}' is not a valid time.";
 		}
 
 		public static string SerializeTime(TimeSpan time)
 		{
+			if (time.TotalMilliseconds < 1)
+				return "0s";
 			var strb = new StringBuilder();
-			if (time.TotalDays > 1)
+			if (time.TotalDays >= 1)
 			{
 				strb.Append(time.TotalDays.ToString("F0")).Append('d');
 				time -= TimeSpan.FromDays(time.Days);
@@ -198,6 +163,7 @@ namespace TS3AudioBot.Helper
 		{
 			if (tomlTable is null) throw new ArgumentNullException(nameof(tomlTable));
 			if (key is null) throw new ArgumentNullException(nameof(key));
+			if (value is null) throw new ArgumentNullException(nameof(value));
 
 			// I literally have no idea how to write it better with this toml library.
 
@@ -230,7 +196,7 @@ namespace TS3AudioBot.Helper
 			}
 			else
 			{
-				TomlComment[] docs = null;
+				TomlComment[]? docs = null;
 				if (retobj.Comments.Any())
 					docs = retobj.Comments.ToArray();
 				if (typeof(T) == typeof(bool)) retobj = tomlTable.Update(key, (bool)(object)value).Added;
@@ -280,7 +246,7 @@ namespace TS3AudioBot.Helper
 			{
 			case '*':
 				{
-					var rest = pathM.Slice(1);
+					var rest = pathM[1..];
 					if (rest.IsEmpty)
 						return obj.GetAllSubItems();
 
@@ -310,12 +276,12 @@ namespace TS3AudioBot.Helper
 						if (path[i] == '*')
 							throw new ArgumentException("Invalid wildcard position", nameof(pathM));
 
-						var currentSub = path.Slice(i);
+						var currentSub = path[i..];
 						if (!IsIdentifier(currentSub)) // if (!IsName)
 						{
 							cont = true;
-							subItemName = path.Slice(0, i);
-							rest = pathM.Slice(i);
+							subItemName = path[..i];
+							rest = pathM[i..];
 							break;
 						}
 					}
@@ -348,7 +314,7 @@ namespace TS3AudioBot.Helper
 				{
 					if (i == 0)
 						throw new ArgumentException("Empty array indexer", nameof(pathM));
-					var indexer = path.Slice(1, i - 1);
+					var indexer = path[1..i];
 					var rest = pathM.Slice(i + 1);
 					bool cont = rest.Length > 0;
 
@@ -396,7 +362,7 @@ namespace TS3AudioBot.Helper
 			if (!IsDot(path))
 				throw new ArgumentException("Expected dot", nameof(pathM));
 
-			var rest = pathM.Slice(1);
+			var rest = pathM[1..];
 			if (!IsIdentifier(rest.Span))
 				throw new ArgumentException("Expected identifier after dot", nameof(pathM));
 
@@ -412,7 +378,7 @@ namespace TS3AudioBot.Helper
 		internal static bool IsDot(ReadOnlySpan<char> name)
 			=> name.Length >= 1 && (name[0] == '.');
 
-		private static TomlObject GetArrayItemByIndex(this TomlObject obj, ReadOnlySpan<char> index)
+		private static TomlObject? GetArrayItemByIndex(this TomlObject obj, ReadOnlySpan<char> index)
 		{
 			int indexNum = int.Parse(new string(index.ToArray()));
 			if (indexNum < 0)
@@ -443,7 +409,7 @@ namespace TS3AudioBot.Helper
 			return Enumerable.Empty<TomlObject>();
 		}
 
-		private static TomlObject GetSubItemByName(this TomlObject obj, ReadOnlySpan<char> name)
+		private static TomlObject? GetSubItemByName(this TomlObject obj, ReadOnlySpan<char> name)
 		{
 			if (obj.TomlType == TomlObjectType.Table)
 				return ((TomlTable)obj).TryGetValue(new string(name.ToArray()));
@@ -465,7 +431,7 @@ namespace TS3AudioBot.Helper
 			var sw = new StringWriter(sb);
 			using (var writer = new JsonTextWriter(sw))
 			{
-				writer.Formatting = Newtonsoft.Json.Formatting.Indented;
+				writer.Formatting = Formatting.Indented;
 				DumpToJson(obj, writer);
 			}
 			return sb.ToString();

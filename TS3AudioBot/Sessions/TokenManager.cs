@@ -7,59 +7,48 @@
 // You should have received a copy of the Open Software License along with this
 // program. If not, see <https://opensource.org/licenses/OSL-3.0>.
 
+using LiteDB;
+using System;
+using System.Collections.Generic;
+using TS3AudioBot.Helper;
+using TSLib.Helper;
+
 namespace TS3AudioBot.Sessions
 {
-	using Helper;
-	using LiteDB;
-	using Localization;
-	using System;
-	using System.Collections.Generic;
-
 	public class TokenManager
 	{
 		private const string TokenFormat = "{0}:{1}";
 
 		private const string ApiTokenTable = "apiToken";
 		private readonly LiteCollection<DbApiToken> dbTokenList;
-		// Map: Uid => ApiToken
-		private readonly Dictionary<string, ApiToken> liveTokenList = new Dictionary<string, ApiToken>();
+		private readonly Dictionary<string, ApiToken> dbTokenCache = new Dictionary<string, ApiToken>();
 
 		public TokenManager(DbStore database)
 		{
 			dbTokenList = database.GetCollection<DbApiToken>(ApiTokenTable);
 			dbTokenList.EnsureIndex(x => x.UserUid, true);
 			dbTokenList.EnsureIndex(x => x.Token, true);
-
-			database.GetMetaData(ApiTokenTable);
 		}
 
-		public string GenerateToken(string uid, TimeSpan? timeout = null)
+		public string GenerateToken(string authId, TimeSpan? timeout = null)
 		{
-			if (string.IsNullOrEmpty(uid))
-				throw new ArgumentNullException(nameof(uid));
+			if (string.IsNullOrEmpty(authId))
+				throw new ArgumentNullException(nameof(authId));
 
-			if (!liveTokenList.TryGetValue(uid, out var token))
-			{
-				token = new ApiToken();
-				liveTokenList.Add(uid, token);
-			}
+			var token = new ApiToken(
+				TextUtil.GenToken(ApiToken.TokenLen),
+				AddTimeSpanSafe(Tools.Now, timeout ?? ApiToken.DefaultTokenTimeout));
 
-			token.Value = TextUtil.GenToken(ApiToken.TokenLen);
-			if (timeout.HasValue)
-				token.Timeout = timeout.Value == TimeSpan.MaxValue
-					? DateTime.MaxValue
-					: AddTimeSpanSafe(Util.GetNow(), timeout.Value);
-			else
-				token.Timeout = AddTimeSpanSafe(Util.GetNow(), ApiToken.DefaultTokenTimeout);
+			dbTokenCache[authId] = token;
 
 			dbTokenList.Upsert(new DbApiToken
 			{
-				UserUid = uid,
+				UserUid = authId,
 				Token = token.Value,
 				ValidUntil = token.Timeout
 			});
 
-			return string.Format(TokenFormat, uid, token.Value);
+			return string.Format(TokenFormat, authId, token.Value);
 		}
 
 		private static DateTime AddTimeSpanSafe(DateTime dateTime, TimeSpan addSpan)
@@ -68,6 +57,9 @@ namespace TS3AudioBot.Sessions
 				return DateTime.MaxValue;
 			if (addSpan == TimeSpan.MinValue)
 				return DateTime.MinValue;
+			if (dateTime == DateTime.MaxValue)
+				return DateTime.MaxValue;
+
 			try
 			{
 				return dateTime + addSpan;
@@ -78,32 +70,33 @@ namespace TS3AudioBot.Sessions
 			}
 		}
 
-		internal R<ApiToken, LocalStr> GetToken(string uid)
+		internal ApiToken? GetToken(string authId)
 		{
-			if (liveTokenList.TryGetValue(uid, out var token)
+			if (dbTokenCache.TryGetValue(authId, out var token)
 				&& token.ApiTokenActive)
 				return token;
 
-			var dbToken = dbTokenList.FindById(uid);
-			if (dbToken is null)
-				return new LocalStr(strings.error_no_active_token);
+			var dbToken = dbTokenList.FindById(authId);
+			if (dbToken is null || dbToken.Token is null)
+				return null;
 
-			if (dbToken.ValidUntil < Util.GetNow())
+			if (dbToken.ValidUntil < Tools.Now)
 			{
-				dbTokenList.Delete(uid);
-				return new LocalStr(strings.error_no_active_token);
+				dbTokenList.Delete(authId);
+				dbTokenCache.Remove(authId);
+				return null;
 			}
 
-			token = new ApiToken { Value = dbToken.Token };
-			liveTokenList[uid] = token;
+			token = new ApiToken(dbToken.Token, dbToken.ValidUntil);
+			dbTokenCache[authId] = token;
 			return token;
 		}
 
 		private class DbApiToken
 		{
 			[BsonId]
-			public string UserUid { get; set; }
-			public string Token { get; set; }
+			public string? UserUid { get; set; }
+			public string? Token { get; set; }
 			public DateTime ValidUntil { get; set; }
 		}
 	}

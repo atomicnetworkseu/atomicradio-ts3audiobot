@@ -7,125 +7,100 @@
 // You should have received a copy of the Open Software License along with this
 // program. If not, see <https://opensource.org/licenses/OSL-3.0>.
 
+using NLog;
+using System;
+using System.Threading.Tasks;
+using TS3AudioBot.CommandSystem;
+using TS3AudioBot.Config;
+using TS3AudioBot.Dependency;
+using TS3AudioBot.Environment;
+using TS3AudioBot.Helper;
+using TS3AudioBot.Plugins;
+using TS3AudioBot.ResourceFactories;
+using TS3AudioBot.Rights;
+using TS3AudioBot.Sessions;
+using TS3AudioBot.Web;
+using TSLib.Scheduler;
+
 namespace TS3AudioBot
 {
-	using Config;
-	using Dependency;
-	using Helper;
-	using Helper.Environment;
-	using NLog;
-	using Plugins;
-	using ResourceFactories;
-	using Rights;
-	using Sessions;
-	using System;
-	using System.Threading;
-	using TS3AudioBot.CommandSystem;
-	using Web;
-
-	public sealed class Core : IDisposable
+	public sealed class Core
 	{
 		private static readonly Logger Log = LogManager.GetCurrentClassLogger();
-		private const string DefaultConfigFileName = "ts3audiobot.toml";
 		private readonly string configFilePath;
 		private bool forceNextExit;
+		private readonly DedicatedTaskScheduler scheduler;
 		private readonly CoreInjector injector;
 
-		internal static void Main(string[] args)
+		public Core(DedicatedTaskScheduler scheduler, string? configFilePath = null)
 		{
-			Thread.CurrentThread.Name = "TAB Main";
-
-			var setup = Setup.ReadParameter(args);
-
-			if (setup.Exit == ExitType.Immediately)
-				return;
-
-			if (!setup.SkipVerifications && !Setup.VerifyAll())
-				return;
-
-			if (setup.Llgc)
-				Setup.EnableLlgc();
-
-			if (!setup.HideBanner)
-				Setup.LogHeader();
-
-			// Initialize the actual core
-			var core = new Core(setup.ConfigFile);
-			AppDomain.CurrentDomain.UnhandledException += core.ExceptionHandler;
-			Console.CancelKeyPress += core.ConsoleInterruptHandler;
-
-			var initResult = core.Run(setup.Interactive);
-			if (!initResult)
-			{
-				Log.Error("Core initialization failed: {0}", initResult.Error);
-				core.Dispose();
-			}
-		}
-
-		public Core(string configFilePath = null)
-		{
+			this.scheduler = scheduler;
 			// setting defaults
-			this.configFilePath = configFilePath ?? DefaultConfigFileName;
+			this.configFilePath = configFilePath ?? FilesConst.CoreConfig;
 
 			injector = new CoreInjector();
 		}
 
-		private E<string> Run(bool interactive = false)
+		public async Task Run(ParameterData setup)
 		{
-			var configResult = ConfRoot.OpenOrCreate(configFilePath);
-			if (!configResult.Ok)
-				return "Could not create config";
-			ConfRoot config = configResult.Value;
-			Config.Deprecated.UpgradeScript.CheckAndUpgrade(config);
+			scheduler.VerifyOwnThread();
+
+			AppDomain.CurrentDomain.UnhandledException += UnhandledExceptionHandler;
+			TaskScheduler.UnobservedTaskException += UnobservedTaskExceptionHandler;
+			Console.CancelKeyPress += ConsoleInterruptHandler;
+
+			var config = ConfRoot.OpenOrCreate(configFilePath);
+			if (config is null)
+				throw new Exception("Could not create config");
 			ConfigUpgrade2.Upgrade(config.Configs.BotsPath.Value);
 			config.Save();
 
 			var builder = new DependencyBuilder(injector);
 
-			builder.AddModule(this);
-			builder.AddModule(config);
-			builder.AddModule(injector);
-			builder.AddModule(config.Db);
+			injector.AddModule(this);
+			injector.AddModule(scheduler);
+			injector.AddModule(injector);
+			injector.AddModule(config);
+			injector.AddModule(config.Db);
+			injector.AddModule(config.Plugins);
+			injector.AddModule(config.Web);
+			injector.AddModule(config.Web.Interface);
+			injector.AddModule(config.Web.Api);
+			injector.AddModule(config.Rights);
+			injector.AddModule(config.Factories);
 			builder.RequestModule<SystemMonitor>();
 			builder.RequestModule<DbStore>();
-			builder.AddModule(config.Plugins);
 			builder.RequestModule<PluginManager>();
-			builder.AddModule(config.Web);
-			builder.AddModule(config.Web.Interface);
-			builder.AddModule(config.Web.Api);
 			builder.RequestModule<WebServer>();
-			builder.AddModule(config.Rights);
 			builder.RequestModule<RightsManager>();
 			builder.RequestModule<BotManager>();
 			builder.RequestModule<TokenManager>();
 			builder.RequestModule<CommandManager>();
-			builder.AddModule(config.Factories);
-			// TODO fix interaction: rfm needs to be in the same injector as the commandsystem, otherwise duplicate error
-			// Also TODO find solution to move commandsystem to bot, without breaking api
-			builder.RequestModule<ResourceFactory>();
+			builder.RequestModule<ResourceResolver>();
+			builder.RequestModule<Stats>();
 
 			if (!builder.Build())
-			{
-				Log.Error("Missing core module dependency");
-				return "Could not load all core modules";
-			}
+				throw new Exception("Could not load all core modules");
 
+			Upgrader.PerformUpgrades(injector);
 			YoutubeDlHelper.DataObj = config.Tools.YoutubeDl;
 
-			builder.GetModule<SystemMonitor>().StartTimedSnapshots();
-			builder.GetModule<CommandManager>().RegisterCollection(MainCommands.Bag);
-			builder.GetModule<RightsManager>().CreateConfigIfNotExists(interactive);
-			builder.GetModule<BotManager>().RunBots(interactive);
-			builder.GetModule<WebServer>().StartWebServer();
-
-			return R.Ok;
+			injector.GetModuleOrThrow<CommandManager>().RegisterCollection(MainCommands.Bag);
+			injector.GetModuleOrThrow<RightsManager>().CreateConfigIfNotExists(setup.Interactive);
+			injector.GetModuleOrThrow<WebServer>().StartWebServer();
+			injector.GetModuleOrThrow<Stats>().StartTimer(setup.SendStats);
+			await injector.GetModuleOrThrow<BotManager>().RunBots(setup.Interactive);
 		}
 
-		public void ExceptionHandler(object sender, UnhandledExceptionEventArgs e)
+		public void UnhandledExceptionHandler(object sender, UnhandledExceptionEventArgs e)
 		{
 			Log.Fatal(e.ExceptionObject as Exception, "Critical program failure!");
-			Dispose();
-			Environment.Exit(-1);
+			StopAsync().RunSynchronously();
+		}
+
+		public static void UnobservedTaskExceptionHandler(object? sender, UnobservedTaskExceptionEventArgs e)
+		{
+			Log.Error(e.Exception, "Unobserved Task error!");
 		}
 
 		public void ConsoleInterruptHandler(object sender, ConsoleCancelEventArgs e)
@@ -137,26 +112,32 @@ namespace TS3AudioBot
 					Log.Info("Got interrupt signal, trying to soft-exit.");
 					e.Cancel = true;
 					forceNextExit = true;
-					Dispose();
+					Stop();
 				}
 				else
 				{
 					Log.Info("Got multiple interrupt signals, trying to force-exit.");
-					Environment.Exit(0);
+					System.Environment.Exit(0);
 				}
 			}
 		}
 
-		public void Dispose()
+		public void Stop() => _ = scheduler.InvokeAsync(StopAsync);
+
+		private async Task StopAsync()
 		{
 			Log.Info("TS3AudioBot shutting down.");
 
-			injector.GetModule<BotManager>()?.Dispose();
+			var botManager = injector.GetModule<BotManager>();
+			if (botManager != null)
+				await botManager.StopBots();
 			injector.GetModule<PluginManager>()?.Dispose();
 			injector.GetModule<WebServer>()?.Dispose();
 			injector.GetModule<DbStore>()?.Dispose();
-			injector.GetModule<ResourceFactory>()?.Dispose();
-			TickPool.Close();
+			injector.GetModule<ResourceResolver>()?.Dispose();
+			injector.GetModule<DedicatedTaskScheduler>()?.Dispose();
+
+			Log.Info("Bye");
 		}
 	}
 }

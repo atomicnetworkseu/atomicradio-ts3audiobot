@@ -7,18 +7,19 @@
 // You should have received a copy of the Open Software License along with this
 // program. If not, see <https://opensource.org/licenses/OSL-3.0>.
 
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.IO;
+using System.Linq;
+using System.Text;
+using TS3AudioBot.Config;
+using TS3AudioBot.Dependency;
+using TS3AudioBot.ResourceFactories;
+using TSLib.Helper;
+
 namespace TS3AudioBot.Plugins
 {
-	using Config;
-	using Dependency;
-	using Helper;
-	using System;
-	using System.Collections.Generic;
-	using System.Globalization;
-	using System.IO;
-	using System.Linq;
-	using System.Text;
-
 	// Start Plugin:
 	// ! Start plugins before rights system to ensure all rights are loaded
 	// - Get all commands
@@ -35,19 +36,24 @@ namespace TS3AudioBot.Plugins
 	{
 		private readonly ConfPlugins config;
 		private readonly CoreInjector coreInjector;
-		private readonly Dictionary<string, Plugin> plugins;
-		private readonly HashSet<int> usedIds;
+		private readonly ResourceResolver resourceResolver;
+		private readonly BotManager botManager;
+		private readonly Dictionary<string, Plugin> plugins = new Dictionary<string, Plugin>();
+		private readonly HashSet<int> usedIds = new HashSet<int>();
 		private readonly object pluginsLock = new object();
 
-		public PluginManager(ConfPlugins config, CoreInjector coreInjector)
+		// TODO remove after plugin rework
+		internal ICollection<Plugin> Plugins => plugins.Values;
+
+		public PluginManager(ConfPlugins config, CoreInjector coreInjector, ResourceResolver resourceResolver, BotManager botManager)
 		{
-			Util.Init(out plugins);
-			Util.Init(out usedIds);
 			this.config = config;
 			this.coreInjector = coreInjector;
+			this.resourceResolver = resourceResolver;
+			this.botManager = botManager;
 		}
 
-		private void CheckAndClearPlugins(Bot bot)
+		private void CheckAndClearPlugins(Bot? bot)
 		{
 			ClearMissingFiles();
 			CheckLocalPlugins(bot);
@@ -55,7 +61,7 @@ namespace TS3AudioBot.Plugins
 
 		/// <summary>Updates the plugin dictionary with new and changed plugins.</summary>
 		/// <param name="bot">A bot instance when the plugin is a bot local plugin.</param>
-		private void CheckLocalPlugins(Bot bot)
+		private void CheckLocalPlugins(Bot? bot)
 		{
 			var dir = new DirectoryInfo(config.Path);
 			if (!dir.Exists)
@@ -78,7 +84,7 @@ namespace TS3AudioBot.Plugins
 						plugin.Load();
 						break;
 					default:
-						throw Util.UnhandledDefault(status);
+						throw Tools.UnhandledDefault(status);
 					}
 				}
 				else
@@ -86,7 +92,7 @@ namespace TS3AudioBot.Plugins
 					if (IsIgnored(file))
 						continue;
 
-					plugin = new Plugin(file, GetFreeId(), config.WriteStatusFiles);
+					plugin = new Plugin(coreInjector, resourceResolver, botManager, file, GetFreeId());
 
 					if (plugin.Load() == PluginResponse.Disabled)
 					{
@@ -94,7 +100,6 @@ namespace TS3AudioBot.Plugins
 						continue;
 					}
 
-					coreInjector.FillProperties(plugin);
 					plugins.Add(file.Name, plugin);
 				}
 			}
@@ -139,7 +144,7 @@ namespace TS3AudioBot.Plugins
 			return id;
 		}
 
-		public PluginResponse StartPlugin(string identifier, Bot bot)
+		public PluginResponse StartPlugin(string identifier, Bot? bot)
 		{
 			lock (pluginsLock)
 			{
@@ -149,7 +154,7 @@ namespace TS3AudioBot.Plugins
 			}
 		}
 
-		public PluginResponse StopPlugin(string identifier, Bot bot)
+		public PluginResponse StopPlugin(string identifier, Bot? bot)
 		{
 			lock (pluginsLock)
 			{
@@ -173,7 +178,7 @@ namespace TS3AudioBot.Plugins
 			plugin.Unload();
 		}
 
-		public PluginStatusInfo[] GetPluginOverview(Bot bot)
+		public PluginStatusInfo[] GetPluginOverview(Bot? bot)
 		{
 			lock (pluginsLock)
 			{
@@ -209,7 +214,7 @@ namespace TS3AudioBot.Plugins
 				case PluginStatus.Disabled: strb.Append("UNL"); break;
 				case PluginStatus.Error: strb.Append("ERR"); break;
 				case PluginStatus.NotAvailable: strb.Append("N/A"); break;
-				default: throw Util.UnhandledDefault(plugin.Status);
+				default: throw Tools.UnhandledDefault(plugin.Status);
 				}
 				strb.Append('|').AppendLine(plugin.Name ?? "<not loaded>");
 			}

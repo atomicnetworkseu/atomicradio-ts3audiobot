@@ -7,20 +7,20 @@
 // You should have received a copy of the Open Software License along with this
 // program. If not, see <https://opensource.org/licenses/OSL-3.0>.
 
+using Nett;
+using Newtonsoft.Json;
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using TS3AudioBot.Helper;
+
 namespace TS3AudioBot.Config
 {
-	using Nett;
-	using Newtonsoft.Json;
-	using System;
-	using System.Collections.Generic;
-	using System.Diagnostics;
-	using Helper;
-
 	[DebuggerDisplay("{Key}:{Value}")]
-	public class ConfigValue<T> : ConfigPart
+	public class ConfigValue<T> : ConfigPart where T : notnull
 	{
 		public override bool ExpectsString => typeof(T) == typeof(string) || typeof(T) == typeof(TimeSpan) || typeof(T).IsEnum;
-		private ConfigValue<T> backingValue;
+		private ConfigValue<T>? backingValue;
 		private bool hasValue = false;
 		public T Default { get; }
 		private T value;
@@ -47,21 +47,22 @@ namespace TS3AudioBot.Config
 				}
 			}
 		}
-		public Func<T, E<string>> Validator { get; set; }
+		public Func<T, E<string>>? Validator { get; set; }
 
-		public event EventHandler<ConfigChangedEventArgs<T>> Changed;
+		public event EventHandler<ConfigChangedEventArgs<T>>? Changed;
 
 		public ConfigValue(string key, T defaultVal, string doc = "") : base(key)
 		{
 			Documentation = doc;
 			Default = defaultVal;
+			value = default!;
 		}
 
-		private void InvokeChange(object sender, ConfigChangedEventArgs<T> args) => Changed?.Invoke(sender, args);
+		private void InvokeChange(object? sender, ConfigChangedEventArgs<T> args) => Changed?.Invoke(sender, args);
 
 		public override void ClearEvents() => Changed = null;
 
-		public override void FromToml(TomlObject tomlObject)
+		public override void FromToml(TomlObject? tomlObject)
 		{
 			if (tomlObject == null)
 				return;
@@ -73,7 +74,7 @@ namespace TS3AudioBot.Config
 			}
 
 			var validate = Validator?.Invoke(tomlValue) ?? R.Ok;
-			if(!validate.Ok)
+			if (!validate.Ok)
 			{
 				Log.Warn("Invalid value in '{0}', {1}", Key, validate.Error);
 				return;
@@ -87,6 +88,9 @@ namespace TS3AudioBot.Config
 			// Keys with underscore are read-only
 			if (Key.StartsWith("_"))
 				return;
+
+			if (Parent is null)
+				throw new InvalidOperationException("Value is not in a tree");
 
 			// Set field if either
 			// - this value is set
@@ -132,7 +136,7 @@ namespace TS3AudioBot.Config
 			catch (JsonReaderException ex) { return $"Could not read value: {ex.Message}"; }
 		}
 
-		public override string ToString() => Value.ToString();
+		public override string ToString() => Value.ToString() ?? "<null>";
 
 		public static implicit operator T(ConfigValue<T> conf) => conf.Value;
 	}

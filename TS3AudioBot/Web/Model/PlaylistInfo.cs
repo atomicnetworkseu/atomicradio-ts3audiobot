@@ -7,10 +7,10 @@
 // You should have received a copy of the Open Software License along with this
 // program. If not, see <https://opensource.org/licenses/OSL-3.0>.
 
+using Newtonsoft.Json;
+
 namespace TS3AudioBot.Web.Model
 {
-	using Newtonsoft.Json;
-
 	public class PlaylistInfo
 	{
 		// TODO better names
@@ -29,6 +29,12 @@ namespace TS3AudioBot.Web.Model
 		/// This might only be a part of the entire playlist.
 		/// Check <see cref="SongCount"> for the entire count.</summary>
 		[JsonProperty(PropertyName = "Items", NullValueHandling = NullValueHandling.Ignore)]
-		public PlaylistItemGetData[] Items { get; set; }
+		public PlaylistItemGetData[]? Items { get; set; }
+
+		public PlaylistInfo(string id, string title)
+		{
+			Id = id;
+			Title = title;
+		}
 	}
 }

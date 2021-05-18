@@ -7,56 +7,29 @@
 // You should have received a copy of the Open Software License along with this
 // program. If not, see <https://opensource.org/licenses/OSL-3.0>.
 
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
+using System.IO;
+using System.Linq;
+using System.Reflection;
+using System.Text;
+using System.Text.RegularExpressions;
+using System.Threading.Tasks;
+using TS3AudioBot.CommandSystem;
+using TS3AudioBot.Localization;
+using TSLib.Messages;
+
 namespace TS3AudioBot.Helper
 {
-	using CommandSystem;
-	using Localization;
-	using Newtonsoft.Json;
-	using Newtonsoft.Json.Linq;
-	using System;
-	using System.Collections.Generic;
-	using System.Diagnostics;
-	using System.IO;
-	using System.Linq;
-	using System.Reflection;
-	using System.Text;
-	using System.Text.RegularExpressions;
-
 	public static class Util
 	{
 		public const RegexOptions DefaultRegexConfig = RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.ECMAScript;
 
 		private static readonly Regex SafeFileNameMatcher = new Regex(@"^[\w-_]+$", DefaultRegexConfig);
-
-		public static DateTime GetNow() => DateTime.Now;
-
-		public static readonly DateTime UnixTimeStart = new DateTime(1970, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc);
-
-		public static uint ToUnix(this DateTime dateTime) => (uint)(dateTime - UnixTimeStart).TotalSeconds;
-
-		public static void Init<T>(out T obj) where T : new() => obj = new T();
-
-		public static Random Random { get; } = new Random();
-
-		public static Encoding Utf8Encoder { get; } = new UTF8Encoding(false, false);
-
-		public static int MathMod(int x, int mod) => ((x % mod) + mod) % mod;
-
-		private static long Pow(long b, int pow)
-		{
-			long ret = 1;
-			while (pow != 0)
-			{
-				if ((pow & 1) == 1)
-					ret *= b;
-				b *= b;
-				pow >>= 1;
-			}
-			return ret;
-		}
-
-		public static float Clamp(float value, float min, float max) => Math.Min(Math.Max(value, min), max);
-		public static int Clamp(int value, int min, int max) => Math.Min(Math.Max(value, min), max);
 
 		private static readonly string[] byteSuffix = { "B", "KB", "MB", "GB", "TB", "PB", "EB" };
 
@@ -64,7 +37,7 @@ namespace TS3AudioBot.Helper
 		{
 			if (bytes == 0)
 				return "0B";
-			int order = (int)Math.Log(Math.Abs(bytes), 1024);
+			var order = (int)Math.Log(Math.Abs(bytes), 1024);
 			return (bytes >> (10 * order)) + byteSuffix[order];
 		}
 
@@ -103,60 +76,42 @@ namespace TS3AudioBot.Helper
 			return unchecked((int)uval);
 		}
 
-		public static void UnwrapThrow(this E<LocalStr> r)
+		private static long Pow(long b, int pow)
 		{
-			if (!r.Ok)
-				throw new CommandException(r.Error.Str, CommandExceptionReason.CommandError);
-		}
-
-		public static T UnwrapThrow<T>(this R<T, LocalStr> r)
-		{
-			if (r.Ok)
-				return r.Value;
-			else
-				throw new CommandException(r.Error.Str, CommandExceptionReason.CommandError);
-		}
-
-		public static bool UnwrapToLog(this E<LocalStr> r, NLog.Logger logger, NLog.LogLevel level = null)
-		{
-			if (!r.Ok)
-				logger.Log(level ?? NLog.LogLevel.Warn, r.Error.Str);
-			return r.Ok;
-		}
-
-		public static string UnrollException(this Exception ex)
-		{
-			var strb = new StringBuilder();
-			while (ex != null)
+			long ret = 1;
+			while (pow != 0)
 			{
-				strb.AppendFormat("MSG: {0}\nTYPE:{1}\nSTACK:{2}\n", ex.Message, ex.GetType().Name, ex.StackTrace);
-				ex = ex.InnerException;
+				if ((pow & 1) == 1)
+					ret *= b;
+				b *= b;
+				pow >>= 1;
 			}
-			return strb.ToString();
+			return ret;
 		}
 
-		public static Exception UnhandledDefault<T>(T value) where T : struct { return new MissingEnumCaseException(typeof(T).Name, value.ToString()); }
-
-		public static Stream GetEmbeddedFile(string name)
+		public static Stream? GetEmbeddedFile(string name)
 		{
 			var assembly = Assembly.GetExecutingAssembly();
 			return assembly.GetManifestResourceStream(name);
 		}
 
-		public static R<T> TryCast<T>(this JToken token, string key)
+		public static bool TryCast<T>(this JToken token, string key, [MaybeNullWhen(false)] out T value) where T : notnull
 		{
+			value = default!;
 			if (token is null)
-				return R.Err;
-			var value = token.SelectToken(key);
-			if (value is null)
-				return R.Err;
-			try {
-				var t = value.ToObject<T>();
-				if ((object)t is null)
-					return R.Err;
-				return t;
+				return false;
+			var jValue = token.SelectToken(key);
+			if (jValue is null)
+				return false;
+			try
+			{
+				var t = jValue.ToObject<T>();
+				if (t is null)
+					return false;
+				value = t;
+				return true;
 			}
-			catch (JsonReaderException) { return R.Err; }
+			catch (JsonReaderException) { return false; }
 		}
 
 		public static E<LocalStr> IsSafeFileName(string name)
@@ -170,7 +125,7 @@ namespace TS3AudioBot.Helper
 			return R.Ok;
 		}
 
-		public static IEnumerable<TResult> SelectOk<TSource, TResult, TErr>(this IEnumerable<TSource> source, Func<TSource, R<TResult, TErr>> selector)
+		public static IEnumerable<TResult> SelectOk<TSource, TResult, TErr>(this IEnumerable<TSource> source, Func<TSource, R<TResult, TErr>> selector) where TSource : notnull where TResult : notnull where TErr : notnull
 			=> source.Select(selector).Where(x => x.Ok).Select(x => x.Value);
 
 		public static bool HasExitedSafe(this Process process)
@@ -179,12 +134,66 @@ namespace TS3AudioBot.Helper
 			catch { return true; }
 		}
 
-		internal static void SetLogId(string id) => NLog.MappedDiagnosticsContext.Set("BotId", id);
-	}
+		public static V GetOrNew<K, V>(this IDictionary<K, V> dict, K key) where K : notnull where V : new()
+		{
+			if (!dict.TryGetValue(key, out var val))
+			{
+				val = new V();
+				dict[key] = val;
+			}
+			return val;
+		}
 
-	public class MissingEnumCaseException : Exception
-	{
-		public MissingEnumCaseException(string enumTypeName, string valueName) : base($"The switch does not handle the value \"{valueName}\" from \"{enumTypeName}\".") { }
-		public MissingEnumCaseException(string message, Exception inner) : base(message, inner) { }
+		public static async Task CatchToLog(this Task t, NLog.Logger logger, NLog.LogLevel? level = null)
+		{
+			try
+			{
+				await t;
+			}
+			catch (AudioBotException ex)
+			{
+				logger.Log(level ?? NLog.LogLevel.Warn, ex, ex.Message);
+			}
+		}
+
+		public static async Task<T?> Try<T>(this Task<T> t) where T : class
+		{
+			try { return await t; }
+			catch { return null; }
+		}
+
+		public static T? Try<T>(Func<T> t) where T : class
+		{
+			try { return t(); }
+			catch { return null; }
+		}
+
+		public static void UnwrapThrow(this E<LocalStr> r)
+		{
+			if (!r.Ok)
+				throw new CommandException(r.Error.Str, CommandExceptionReason.CommandError);
+		}
+
+		public static T UnwrapThrow<T>(this R<T, LocalStr> r) where T : notnull
+		{
+			if (r.Ok)
+				return r.Value;
+			else
+				throw new CommandException(r.Error.Str, CommandExceptionReason.CommandError);
+		}
+
+		public static bool UnwrapToLog(this E<LocalStr> r, NLog.Logger logger, NLog.LogLevel? level = null)
+		{
+			if (!r.Ok)
+				logger.Log(level ?? NLog.LogLevel.Warn, r.Error.Str);
+			return r.Ok;
+		}
+
+		public static bool UnwrapToLog(this E<CommandError> r, NLog.Logger logger, NLog.LogLevel? level = null)
+		{
+			if (!r.Ok)
+				logger.Log(level ?? NLog.LogLevel.Warn, r.Error.ErrorFormat());
+			return r.Ok;
+		}
 	}
 }

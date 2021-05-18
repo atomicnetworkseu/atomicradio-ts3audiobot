@@ -7,13 +7,17 @@
 // You should have received a copy of the Open Software License along with this
 // program. If not, see <https://opensource.org/licenses/OSL-3.0>.
 
+using System;
+using System.IO;
+using System.Text.RegularExpressions;
+using TS3AudioBot.Helper;
+
 namespace TS3AudioBot.Config
 {
-	using Helper;
-	using System;
-	using System.IO;
-	using System.Text.RegularExpressions;
-
+	/// <summary>
+	/// Upgrades the /bots/ folder structure from each Bot being a 'bot_(name).toml'
+	/// file to each bot having its own folder with '/(name)/bot.toml'.
+	/// </summary>
 	internal static class ConfigUpgrade2
 	{
 		private static readonly NLog.Logger Log = NLog.LogManager.GetCurrentClassLogger();

@@ -7,22 +7,23 @@
 // You should have received a copy of the Open Software License along with this
 // program. If not, see <https://opensource.org/licenses/OSL-3.0>.
 
+using System;
+using System.ComponentModel;
+using System.Diagnostics;
+using System.Globalization;
+using System.IO;
+using System.Text.RegularExpressions;
+using System.Threading;
+using System.Threading.Tasks;
+using TS3AudioBot.Config;
+using TS3AudioBot.Helper;
+using TSLib.Audio;
+using TSLib.Helper;
+using TSLib.Scheduler;
+
 namespace TS3AudioBot.Audio
 {
-	using Config;
-	using Helper;
-	using System;
-	using System.ComponentModel;
-	using System.Diagnostics;
-	using System.Globalization;
-	using System.IO;
-	using System.Text;
-	using System.Text.RegularExpressions;
-	using System.Threading;
-	using TS3Client.Audio;
-	using TS3Client.Helper;
-
-	public class FfmpegProducer : IAudioPassiveProducer, ISampleInfo, IDisposable
+	public class FfmpegProducer : IPlayerSource, ISampleInfo, IDisposable
 	{
 		private static readonly NLog.Logger Log = NLog.LogManager.GetCurrentClassLogger();
 		private readonly Id id;
@@ -31,47 +32,49 @@ namespace TS3AudioBot.Audio
 		private const string PreLinkConf = "-hide_banner -nostats -threads 1 -i \"";
 		private const string PostLinkConf = "\" -ac 2 -ar 48000 -f s16le -acodec pcm_s16le pipe:1";
 		private const string LinkConfIcy = "-hide_banner -nostats -threads 1 -i pipe:0 -ac 2 -ar 48000 -f s16le -acodec pcm_s16le pipe:1";
-		private readonly TimeSpan retryOnDropBeforeEnd = TimeSpan.FromSeconds(10);
+		private static readonly TimeSpan retryOnDropBeforeEnd = TimeSpan.FromSeconds(10);
 
 		private readonly ConfToolsFfmpeg config;
 
-		public event EventHandler OnSongEnd;
-		public event EventHandler<SongInfoChanged> OnSongUpdated;
+		public event EventHandler? OnSongEnd;
+		public event EventHandler<SongInfoChanged>? OnSongUpdated;
 
-		private FfmpegInstance ffmpegInstance;
+		private readonly DedicatedTaskScheduler scheduler;
+		private FfmpegInstance? ffmpegInstance;
 
 		public int SampleRate { get; } = 48000;
 		public int Channels { get; } = 2;
 		public int BitsPerSample { get; } = 16;
 
-		public FfmpegProducer(ConfToolsFfmpeg config, Id id)
+		public FfmpegProducer(ConfToolsFfmpeg config, DedicatedTaskScheduler scheduler, Id id)
 		{
 			this.config = config;
+			this.scheduler = scheduler;
 			this.id = id;
 		}
 
-		public E<string> AudioStart(string url) => StartFfmpegProcess(url, TimeSpan.Zero);
+		public Task AudioStart(string url, TimeSpan? startOff = null)
+		{
+			StartFfmpegProcess(url, startOff ?? TimeSpan.Zero);
+			return Task.CompletedTask;
+		}
 
-		public E<string> AudioStartIcy(string url) => StartFfmpegProcessIcy(url);
+		public async Task AudioStartIcy(string url) => await StartFfmpegProcessIcy(url);
 
-		public E<string> AudioStop()
+		public void AudioStop()
 		{
 			StopFfmpegProcess();
-			return R.Ok;
 		}
 
-		public TimeSpan Length => GetCurrentSongLength();
+		public TimeSpan? Length => GetCurrentSongLength();
 
-		public TimeSpan Position
-		{
-			get => ffmpegInstance?.AudioTimer.SongPosition ?? TimeSpan.Zero;
-			set => SetPosition(value);
-		}
+		public TimeSpan? Position => ffmpegInstance?.AudioTimer.SongPosition;
 
-		public int Read(byte[] buffer, int offset, int length, out Meta meta)
+		public Task Seek(TimeSpan position) { SetPosition(position); return Task.CompletedTask; }
+
+		public int Read(byte[] buffer, int offset, int length, out Meta? meta)
 		{
-			meta = null;
-			bool triggerEndSafe = false;
+			meta = default;
 			int read;
 
 			var instance = ffmpegInstance;
@@ -91,8 +94,9 @@ namespace TS3AudioBot.Audio
 
 			if (read == 0)
 			{
-				bool ret;
-				(ret, triggerEndSafe) = instance.IsIcyStream
+				AssertNotMainScheduler();
+
+				var (ret, triggerEndSafe) = instance.IsIcyStream
 					? OnReadEmptyIcy(instance)
 					: OnReadEmpty(instance);
 				if (ret)
@@ -104,12 +108,12 @@ namespace TS3AudioBot.Audio
 					AudioStop();
 					triggerEndSafe = true;
 				}
-			}
 
-			if (triggerEndSafe)
-			{
-				OnSongEnd?.Invoke(this, EventArgs.Empty);
-				return 0;
+				if (triggerEndSafe)
+				{
+					OnSongEnd?.Invoke(this, EventArgs.Empty);
+					return 0;
+				}
 			}
 
 			instance.HasTriedToReconnect = false;
@@ -150,11 +154,13 @@ namespace TS3AudioBot.Audio
 
 		private (bool ret, bool trigger) OnReadEmptyIcy(FfmpegInstance instance)
 		{
+			AssertNotMainScheduler();
+
 			if (instance.FfmpegProcess.HasExitedSafe() && !instance.HasTriedToReconnect)
 			{
 				Log.Debug("Connection to stream lost, retrying...");
 				instance.HasTriedToReconnect = true;
-				var newInstance = StartFfmpegProcessIcy(instance.ReconnectUrl);
+				var newInstance = StartFfmpegProcessIcy(instance.ReconnectUrl).Result;
 				if (newInstance.Ok)
 				{
 					newInstance.Value.HasTriedToReconnect = true;
@@ -184,15 +190,16 @@ namespace TS3AudioBot.Audio
 			return StartFfmpegProcess(lastLink, value);
 		}
 
-		private R<FfmpegInstance, string> StartFfmpegProcess(string url, TimeSpan offset)
+		private R<FfmpegInstance, string> StartFfmpegProcess(string url, TimeSpan? offsetOpt)
 		{
 			StopFfmpegProcess();
 			Log.Trace("Start request {0}", url);
 
 			string arguments;
+			var offset = offsetOpt ?? TimeSpan.Zero;
 			if (offset > TimeSpan.Zero)
 			{
-				var seek = $"-ss {offset.ToString(@"hh\:mm\:ss", CultureInfo.InvariantCulture)}";
+				var seek = string.Format(CultureInfo.InvariantCulture, @"-ss {0:hh\:mm\:ss\.fff}", offset);
 				arguments = string.Concat(seek, " ", PreLinkConf, url, PostLinkConf, " ", seek);
 			}
 			else
@@ -205,39 +212,38 @@ namespace TS3AudioBot.Audio
 				new PreciseAudioTimer(this)
 				{
 					SongPositionOffset = offset,
-				},
-				false);
+				});
 
 			return StartFfmpegProcessInternal(newInstance, arguments);
 		}
 
-		private R<FfmpegInstance, string> StartFfmpegProcessIcy(string url)
+		private async Task<R<FfmpegInstance, string>> StartFfmpegProcessIcy(string url)
 		{
 			StopFfmpegProcess();
 			Log.Trace("Start icy-stream request {0}", url);
 
 			try
 			{
-				var request = WebWrapper.CreateRequest(new Uri(url)).Unwrap();
-				request.Headers["Icy-MetaData"] = "1";
+				var response = await WebWrapper
+					.Request(url)
+					.WithHeader("Icy-MetaData", "1")
+					.UnsafeResponse();
 
-				var response = request.GetResponse();
-				var stream = response.GetResponseStream();
-
-				if (!int.TryParse(response.Headers["icy-metaint"], out var metaint))
+				if (!int.TryParse(response.Headers.GetSingle("icy-metaint"), out var metaint))
 				{
+					response.Dispose();
 					return "Invalid icy stream tags";
 				}
 
+				var stream = await response.Content.ReadAsStreamAsync();
 				var newInstance = new FfmpegInstance(
 					url,
 					new PreciseAudioTimer(this),
-					true)
+					stream,
+					metaint)
 				{
-					IcyStream = stream,
-					IcyMetaInt = metaint,
+					OnMetaUpdated = e => OnSongUpdated?.Invoke(this, e)
 				};
-				newInstance.OnMetaUpdated = e => OnSongUpdated(this, e);
 
 				new Thread(() => newInstance.ReadStreamLoop(id))
 				{
@@ -258,20 +264,17 @@ namespace TS3AudioBot.Audio
 		{
 			try
 			{
-				instance.FfmpegProcess = new Process
+				instance.FfmpegProcess.StartInfo = new ProcessStartInfo
 				{
-					StartInfo = new ProcessStartInfo
-					{
-						FileName = config.Path.Value,
-						Arguments = arguments,
-						RedirectStandardOutput = true,
-						RedirectStandardInput = true,
-						RedirectStandardError = true,
-						UseShellExecute = false,
-						CreateNoWindow = true,
-					},
-					EnableRaisingEvents = true,
+					FileName = config.Path.Value,
+					Arguments = arguments,
+					RedirectStandardOutput = true,
+					RedirectStandardInput = true,
+					RedirectStandardError = true,
+					UseShellExecute = false,
+					CreateNoWindow = true,
 				};
+				instance.FfmpegProcess.EnableRaisingEvents = true;
 
 				Log.Debug("Starting ffmpeg with {0}", arguments);
 				instance.FfmpegProcess.ErrorDataReceived += instance.FfmpegProcess_ErrorDataReceived;
@@ -307,13 +310,12 @@ namespace TS3AudioBot.Audio
 			}
 		}
 
-		private TimeSpan GetCurrentSongLength()
-		{
-			var instance = ffmpegInstance;
-			if (instance is null)
-				return TimeSpan.Zero;
+		private TimeSpan? GetCurrentSongLength() => ffmpegInstance?.ParsedSongLength;
 
-			return instance.ParsedSongLength ?? TimeSpan.Zero;
+		private void AssertNotMainScheduler()
+		{
+			if (TaskScheduler.Current == scheduler)
+				throw new Exception("Cannot read on own scheduler. Throwing to prevent deadlock");
 		}
 
 		public void Dispose()
@@ -323,25 +325,28 @@ namespace TS3AudioBot.Audio
 
 		private class FfmpegInstance
 		{
-			public Process FfmpegProcess { get; set; }
+			public Process FfmpegProcess { get; }
 			public bool HasTriedToReconnect { get; set; }
 			public string ReconnectUrl { get; }
-			public bool IsIcyStream { get; }
+			public bool IsIcyStream => IcyStream != null;
 
 			public PreciseAudioTimer AudioTimer { get; }
 			public TimeSpan? ParsedSongLength { get; set; } = null;
 
-			public Stream IcyStream { get; set; }
-			public int IcyMetaInt { get; set; }
+			public Stream? IcyStream { get; }
+			public int IcyMetaInt { get; }
 			public bool Closed { get; set; }
 
-			public Action<SongInfoChanged> OnMetaUpdated;
+			public Action<SongInfoChanged>? OnMetaUpdated;
 
-			public FfmpegInstance(string url, PreciseAudioTimer timer, bool isIcyStream)
+			public FfmpegInstance(string url, PreciseAudioTimer timer) : this(url, timer, null!, 0) { }
+			public FfmpegInstance(string url, PreciseAudioTimer timer, Stream icyStream, int icyMetaInt)
 			{
+				FfmpegProcess = new Process();
 				ReconnectUrl = url;
 				AudioTimer = timer;
-				IsIcyStream = isIcyStream;
+				IcyStream = icyStream;
+				IcyMetaInt = icyMetaInt;
 
 				HasTriedToReconnect = false;
 			}
@@ -372,7 +377,7 @@ namespace TS3AudioBot.Audio
 				if (sender != FfmpegProcess)
 					throw new InvalidOperationException("Wrong process associated to event");
 
-				if (!ParsedSongLength.HasValue)
+				if (ParsedSongLength is null)
 				{
 					var match = FindDurationMatch.Match(e.Data);
 					if (!match.Success)
@@ -393,7 +398,10 @@ namespace TS3AudioBot.Audio
 
 			public void ReadStreamLoop(Id id)
 			{
-				Util.SetLogId(id.ToString());
+				if (IcyStream is null)
+					throw new InvalidOperationException("Instance is not an icy stream");
+
+				Tools.SetLogId(id.ToString());
 				const int IcyMaxMeta = 255 * 16;
 				const int ReadBufferSize = 4096;
 
@@ -441,7 +449,7 @@ namespace TS3AudioBot.Audio
 							}
 							readCount = 0;
 
-							var metaString = Encoding.UTF8.GetString(buffer, 0, metaByte).TrimEnd('\0');
+							var metaString = Tools.Utf8Encoder.GetString(buffer, 0, metaByte).TrimEnd('\0');
 							Log.Debug("Meta: {0}", metaString);
 							OnMetaUpdated?.Invoke(ParseIcyMeta(metaString));
 						}

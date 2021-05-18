@@ -12,10 +12,10 @@ This is a open-source TeamSpeak3 bot, playing music and much more.
   - You can contribute code. This is always appreciated, please open an issue or contact a maintainer to discuss *before* you start.
   - You can support me on [![Patreon][patreon-badge]][patreon-link] or [![Paypal][paypal-badge]][paypal-link]
 
-[patreon-badge]: https://img.shields.io/endpoint.svg?url=https%3A%2F%2Fshieldsio-patreon.herokuapp.com%2FSplamy&style=flat-square
+[patreon-badge]: https://img.shields.io/badge/Patreon-Donate!-F96854.svg?logo=patreon&style=flat-square
 [patreon-link]: https://patreon.com/Splamy
 
-[paypal-badge]: https://img.shields.io/badge/Paypal-Donate!-%2300457C.svg?logo=paypal&style=flat-square
+[paypal-badge]: https://img.shields.io/badge/Paypal-Donate!-00457C.svg?logo=paypal&style=flat-square
 [paypal-link]: https://paypal.me/Splamy
 
 ## Features
@@ -41,16 +41,20 @@ For an in-depth command tutorial see [here in the wiki](https://github.com/Splam
 ## Install
 
 ### Download
-Download either one of the latest builds from our [nightly server](https://splamy.de/Nightly#ts3ab):  
-- [![Download](https://img.shields.io/badge/Download-master-green.svg)](https://splamy.de/api/nightly/ts3ab/master_dotnet_core/download)
-  Versions are mostly considered stable but won't get bigger features as fast.
-- [![Download](https://img.shields.io/badge/Download-develop-green.svg)](https://splamy.de/api/nightly/ts3ab/develop_dotnet_core/download)
-  Will always have the latest and greatest but might not be fully stable or have broken features.
+Pick and download the build for your platform and liking:
+
+|  | Stable | Experimental |
+| -- | -- | -- |
+| | Versions are mostly considered stable but won't get bigger features as fast. | Will always have the latest and greatest but might not be fully stable or have broken features. |
+| Windows_x64 | [![Download](https://img.shields.io/badge/Download-master-green.svg)](https://splamy.de/api/nightly/ts3ab/master_win_x64/download) | [![Download](https://img.shields.io/badge/Download-develop-green.svg)](https://splamy.de/api/nightly/ts3ab/develop_win_x64/download) |
+| Linux_x64 | [![Download](https://img.shields.io/badge/Download-master-green.svg)](https://splamy.de/api/nightly/ts3ab/master_linux_x64/download) | [![Download](https://img.shields.io/badge/Download-develop-green.svg)](https://splamy.de/api/nightly/ts3ab/develop_linux_x64/download) |
+| Docker | [![Docker](https://img.shields.io/badge/Docker-0.11.0-0db7ed.svg)](https://github.com/getdrunkonmovies-com/TS3AudioBot_docker) (NOTE: This build is community-maintained. It comes with all dependencies as well as youtube-dl preconfigured) | - |
+
+(We have more builds like linux arm/arm64 and .NET framework dependent builds available on our [nightly server](https://splamy.de/Nightly#ts3ab))
 
 #### Linux
-1. dotnet core: Get the latest `dotnet core 2.2` version by following [this tutorial](https://dotnet.microsoft.com/download/linux-package-manager/ubuntu16-04/sdk-current) and follow the steps after choosing your platform
-1. Other dependencies:
-* on **Ubuntu**:  
+Install the required dependencies:
+* on **Ubuntu**/**Debian**:  
 Run `sudo apt-get install libopus-dev ffmpeg`
 * on **Arch Linux**:  
 Run `sudo pacman -S opus ffmpeg`
@@ -64,20 +68,20 @@ Run
 * **manually**:
     1. Make sure you have a C compiler installed
     1. Make the Opus script runnable with `chmod u+x InstallOpus.sh` and run it with `./InstallOpus.sh`
-    1. Get the ffmpeg [32bit](https://johnvansickle.com/ffmpeg/builds/ffmpeg-git-32bit-static.tar.xz) or [64bit](https://johnvansickle.com/ffmpeg/builds/ffmpeg-git-64bit-static.tar.xz) binary.
-    1. Extract the ffmpeg archive with `tar -vxf ffmpeg-git-XXbit-static.tar.xz`
-    1. Get the ffmpeg binary from `ffmpeg-git-*DATE*-64bit-static/ffmpeg` and copy it to `TS3AudioBot/bin/Release/netcoreapp2.2`
+    1. Get the ffmpeg [32bit](https://johnvansickle.com/ffmpeg/builds/ffmpeg-git-i686-static.tar.xz) or [64bit](https://johnvansickle.com/ffmpeg/builds/ffmpeg-git-amd64-static.tar.xz) binary.
+    1. Extract the ffmpeg archive with `tar -vxf ffmpeg-git-*XXbit*-static.tar.xz`
+    1. Get the ffmpeg binary from `ffmpeg-git-*DATE*-amd64-static/ffmpeg` and copy it into your TS3AudioBot folder.
 
 #### Windows
 1. Get the ffmpeg [32bit](https://ffmpeg.zeranoe.com/builds/win32/static/ffmpeg-latest-win32-static.zip) or [64bit](https://ffmpeg.zeranoe.com/builds/win64/static/ffmpeg-latest-win64-static.zip) binary.
-1. Open the archive and copy the ffmpeg binary from `ffmpeg-latest-winXX-static/bin/ffmpeg.exe` to `TS3AudioBot/bin/Release/netcoreapp2.2`
+1. Open the archive and copy the ffmpeg binary from `ffmpeg-latest-winXX-static/bin/ffmpeg.exe` into your TS3AudioBot folder.
 
 ### Optional Dependencies
 If the bot can't play some youtube videos it might be due to some embedding restrictions which are blocking this.  
-You can add a [youtube-dl](https://github.com/rg3/youtube-dl/) binary or source folder and specify the path in the config to try to bypass this.
+You can install the [youtube-dl](https://github.com/rg3/youtube-dl/) binary or source folder (and specify the path in the config) to try to bypass this.
 
 ### First time setup
-1. Run the bot with `dotnet TS3AudioBot.dll` and follow the setup instructions.
+1. Run the bot with `./TS3AudioBot` (Linux) or `TS3AudioBot.exe` (Windows) and follow the setup instructions.
 1. (Optional) Close the bot and configure your `rights.toml` to your desires.
 You can use the template rules as suggested in the automatically generated file,
 or dive into the rights syntax [here](https://github.com/Splamy/TS3AudioBot/wiki/Rights).
@@ -98,14 +102,23 @@ For further reading check out the [CommandSystem](https://github.com/Splamy/TS3A
 Download the git repository with `git clone --recurse-submodules https://github.com/Splamy/TS3AudioBot.git`.
 
 #### Linux
-1. Get the latest `dotnet core 2.2` version by following [this tutorial](https://dotnet.microsoft.com/download/linux-package-manager/ubuntu16-04/sdk-current) and choose your platform
+1. Get the latest `dotnet core 3.1` version by following [this tutorial](https://docs.microsoft.com/dotnet/core/install/linux-package-managers) and choose your platform
 1. Go into the directory of the repository with `cd TS3AudioBot`
-1. Execute `dotnet build --framework netcoreapp2.2 --configuration Release TS3AudioBot` to build the AudioBot
-1. The binary will be in `./TS3AudioBot/bin/Release/netcoreapp2.2` and can be run with `dotnet TS3AudioBot.dll`
+1. Execute `dotnet build --framework netcoreapp3.1 --configuration Release TS3AudioBot` to build the AudioBot
+1. The binary will be in `./TS3AudioBot/bin/Release/netcoreapp3.1` and can be run with `dotnet TS3AudioBot.dll`
 
 #### Windows
-1. Make sure you have installed `Visual Studio` with `.NET Framework 4.7.2` and the latest `dotnet core 2.2` or higher
+1. Make sure you have `Visual Studio` with the `dotnet core 3.1` development toolchain installed
 1. Build the AudioBot with Visual Studio.
+
+### Building the WebInterface
+1. Go with the console of your choice into the `./WebInterface` folder
+1. Run `npm install` to restore or update all dependencies for this project
+1. Run `npm run build` to build the project.  
+  The built project will be in `./WebInterface/dist`.  
+  Make sure to the set the webinterface path in the ts3audiobot.toml to this folder.
+1. You can alternatively use `npm run start` for development.  
+  This will use the webpack dev server with live reload instead of the ts3ab server.
 
 ## Community
 
@@ -121,7 +134,7 @@ Translations need to be manually approved and will then be automatically built a
 This project is licensed under [OSL-3.0](https://opensource.org/licenses/OSL-3.0).
 
 Why OSL-3.0:
-- OSL allows you to link to our libraries without needing to disclose your own project, which might be useful if you want to use the TS3Client as a library.
+- OSL allows you to link to our libraries without needing to disclose your own project, which might be useful if you want to use the TSLib as a library.
 - If you create plugins you do not have to make them public like in GPL. (Although we would be happy if you shared them :)
 - With OSL we want to allow you providing the TS3AB as a service (even commercially). We do not want the software to be sold but the service. We want this software to be free for everyone.
 - TL; DR? https://tldrlegal.com/license/open-software-licence-3.0

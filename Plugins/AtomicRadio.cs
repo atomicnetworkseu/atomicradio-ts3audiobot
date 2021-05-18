@@ -5,7 +5,7 @@ using TS3AudioBot.Plugins;
 using TS3Client.Full;
 using TS3Client.Messages;
 
-public class AtomicRadio : IBotPlugin
+public class atomicradio : IBotPlugin
 {
 
 	public Ts3FullClient TS3FullClient { get; set; }
@@ -14,9 +14,9 @@ public class AtomicRadio : IBotPlugin
 	public Dictionary<ushort, List<ushort>> listeners;
 	private HttpClient client = new HttpClient();
 
-	public AtomicRadio()
+	public atomicradio()
 	{
-		Log = NLog.LogManager.GetLogger($"TS3AudioBot.Plugins.AtomicRadio"); ;
+		Log = NLog.LogManager.GetLogger($"TS3AudioBot.Plugins.atomicradio"); ;
 		listeners = new Dictionary<ushort, List<ushort>>();
 		currentChannels = new Dictionary<ushort, ulong>();
 	}

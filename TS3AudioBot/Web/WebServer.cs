@@ -7,29 +7,29 @@
 // You should have received a copy of the Open Software License along with this
 // program. If not, see <https://opensource.org/licenses/OSL-3.0>.
 
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using System;
+using System.IO;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+using TS3AudioBot.Config;
+using TS3AudioBot.Dependency;
+
 namespace TS3AudioBot.Web
 {
-	using Config;
-	using Dependency;
-	using Microsoft.AspNetCore.Builder;
-	using Microsoft.AspNetCore.Hosting;
-	using Microsoft.AspNetCore.Http;
-	using Microsoft.Extensions.DependencyInjection;
-	using Microsoft.Extensions.Logging;
-	using System;
-	using System.IO;
-	using System.Linq;
-	using System.Threading;
-	using System.Threading.Tasks;
-
 	public sealed class WebServer : IDisposable
 	{
 		private static readonly NLog.Logger Log = NLog.LogManager.GetCurrentClassLogger();
 
-		private CancellationTokenSource cancelToken;
+		private CancellationTokenSource? cancelToken;
 		private readonly ConfWeb config;
 		private readonly CoreInjector coreInjector;
-		private Api.WebApi api;
+		private Api.WebApi? api;
 
 		public WebServer(ConfWeb config, CoreInjector coreInjector)
 		{
@@ -42,18 +42,6 @@ namespace TS3AudioBot.Web
 		{
 			var startWebServer = false;
 
-			if (config.Interface.Enabled)
-			{
-				var baseDir = FindWebFolder();
-				if (baseDir is null)
-				{
-					Log.Error("Can't find a WebInterface path to host. Try specifying the path to host in the config");
-				}
-				else
-				{
-					startWebServer = true;
-				}
-			}
 			if (config.Api.Enabled || config.Interface.Enabled)
 			{
 				if (!config.Api.Enabled)
@@ -72,7 +60,7 @@ namespace TS3AudioBot.Web
 			}
 		}
 
-		private string FindWebFolder()
+		public string? FindWebFolder()
 		{
 			var webData = config.Interface;
 			if (string.IsNullOrEmpty(webData.Path))
@@ -82,14 +70,17 @@ namespace TS3AudioBot.Web
 					var up = Path.Combine(Enumerable.Repeat("..", i).ToArray());
 					var checkDir = Path.Combine(up, "WebInterface");
 					if (Directory.Exists(checkDir))
-					{
-						return checkDir;
-					}
+						return Path.GetFullPath(checkDir);
 				}
+
+				var asmPath = Path.GetDirectoryName(typeof(Core).Assembly.Location)!;
+				var asmWebPath = Path.GetFullPath(Path.Combine(asmPath, "WebInterface"));
+				if (Directory.Exists(asmWebPath))
+					return asmWebPath;
 			}
 			else if (Directory.Exists(webData.Path))
 			{
-				return webData.Path;
+				return Path.GetFullPath(webData.Path);
 			}
 
 			return null;
@@ -120,21 +111,22 @@ namespace TS3AudioBot.Web
 							builder.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader();
 						});
 					});
-
 				})
 				.Configure(app =>
 				{
 					app.UseCors("TS3AB");
 
-					app.Map(new PathString("/api"), map =>
+					if (api != null) // api enabled
 					{
-						map.Run(ctx => Task.Run(() => Log.Swallow(() => api.ProcessApiV1Call(ctx))));
-					});
-
-					app.Map(new PathString("/data"), map =>
-					{
-						map.Run(ctx => Task.Run(() => Log.Swallow(() => { /* TODO */ })));
-					});
+						app.Map(new PathString("/api"), map =>
+						{
+							map.Run(async ctx =>
+							{
+								using var _ = NLog.MappedDiagnosticsLogicalContext.SetScoped("BotId", "Api");
+								await Log.SwallowAsync(() => api.ProcessApiV1Call(ctx));
+							});
+						});
+					}
 
 					if (config.Interface.Enabled)
 					{
@@ -172,6 +164,7 @@ namespace TS3AudioBot.Web
 				host.UseUrls(addrs.Select(uri => new UriBuilder(uri) { Port = config.Port }.Uri.AbsoluteUri).ToArray());
 			}
 
+			Log.Info("Starting Webserver on port {0}", config.Port.Value);
 			new Func<Task>(async () =>
 			{
 				try
@@ -184,7 +177,6 @@ namespace TS3AudioBot.Web
 					return;
 				}
 			})();
-			Log.Info("Started Webserver on port {0}", config.Port.Value);
 		}
 
 		public void OnShutdown()

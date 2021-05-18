@@ -7,21 +7,20 @@
 // You should have received a copy of the Open Software License along with this
 // program. If not, see <https://opensource.org/licenses/OSL-3.0>.
 
+using TSLib;
+
 namespace TS3AudioBot
 {
-	using System;
-
 	public class InvokerData
 	{
-		public string ClientUid { get; }
-		public bool IsAnonymous => ClientUid == AnonymousUid;
+		public Uid ClientUid { get; }
+		public bool IsAnonymous => ClientUid == Uid.Anonymous;
 
-		protected const string AnonymousUid = "Anonymous";
-		public static readonly InvokerData Anonymous = new InvokerData(AnonymousUid);
+		public static readonly InvokerData Anonymous = new InvokerData(Uid.Anonymous);
 
-		public InvokerData(string clientUid)
+		public InvokerData(Uid clientUid)
 		{
-			ClientUid = clientUid ?? throw new ArgumentNullException(nameof(clientUid));
+			ClientUid = clientUid;
 		}
 	}
 }
