@@ -23,3 +23,9 @@ jobs:
       run: dotnet build --no-restore
     - name: Test
       run: dotnet test --no-build --verbosity normal
+    - name: Copy target data to staging
+      run: mkdir staging && cp TSLib/bin/Debug/* staging
+    - uses: actions/upload-artifact@v2
+      with:
+        name: Package
+        path: staging
