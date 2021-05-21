@@ -676,7 +676,7 @@ with the id {1}?</value>
     <value>&lt;Quiztime!&gt;</value>
   </data>
   <data name="info_botstatus_sleeping" xml:space="preserve">
-    <value>&lt;Sleeping&gt;</value>
+    <value>♫  Listen to the difference!</value>
   </data>
   <data name="cmd_bot_setup_error" xml:space="preserve">
     <value>Bot setup failed. See logs for more details.</value>
