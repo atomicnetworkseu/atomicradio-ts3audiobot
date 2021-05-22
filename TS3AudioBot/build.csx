@@ -12,7 +12,7 @@ if (Args.Count == 0) {
 string outFile = Args[0];
 string buildConfig = Args[1];
 
-string json = Read("dotnet", "gitversion");
+string json = Read("dotnet-gitversion");
 
 var version = JsonConvert.DeserializeAnonymousType(json, new {
 	FullSemVer = "",
