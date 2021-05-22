@@ -21,6 +21,8 @@ jobs:
       run: dotnet restore
     - name: Restore nuget
       run: nuget restore
+    - name: Remove GitVersionTask
+      run: dotnet remove TS3AudioBot package GitVersionTask
     - name: Build
       run: dotnet build --configuration Release --framework netcoreapp3.1
     - name: Copy target data to staging
