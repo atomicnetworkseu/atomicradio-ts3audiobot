@@ -24,7 +24,7 @@ jobs:
     - name: Test
       run: dotnet test --no-build --verbosity normal
     - name: Copy target data to staging
-      run: mkdir staging && cp -R * staging
+      run: mkdir staging && cp -R TS3AudioBot/* staging
     - uses: actions/upload-artifact@v2
       with:
         name: Package
