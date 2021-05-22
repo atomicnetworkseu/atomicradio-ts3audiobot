@@ -22,9 +22,9 @@ jobs:
     - name: Restore nuget
       run: nuget restore
     - name: Build
-      run: dotnet build --no-restore --configuration Release --framework netcoreapp3.1
+      run: dotnet build --configuration Release --framework netcoreapp3.1
     - name: Copy target data to staging
-      run: mkdir staging && cp -R TS3AudioBot/* staging
+      run: mkdir staging && cp -R TS3AudioBot/bin/* staging
     - uses: actions/upload-artifact@v2
       with:
         name: Package
