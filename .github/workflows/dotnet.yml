@@ -34,7 +34,7 @@ jobs:
       with:
         dotnet-version: 3.1.x
     - name: Build Plugin
-      run: dotnet build --framework netcoreapp3.1 Plugins/AtomicRadio.csproj
+      run: dotnet build --framework netcoreapp3.1 Plugins/atomicradio.csproj
     - name: Copy target data to staging
       run: mkdir staging && cp -R Plugins/bin/Debug/netcoreapp3.1/* staging
     - uses: actions/upload-artifact@v2
