@@ -5,17 +5,16 @@
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
-    <OutputPath>D:\Projekte\TS3AudioBot\Plugins\out</OutputPath>
     <GenerateSerializationAssemblies>Off</GenerateSerializationAssemblies>
     <DebugType>none</DebugType>
     <DebugSymbols>false</DebugSymbols>
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="D:\Projekte\AtomicRadio\atomicradio-ts3audiobot\TS3AudioBot\TS3AudioBot.csproj">
+    <ProjectReference Include="..\TS3AudioBot\TS3AudioBot.csproj">
       <Private>false</Private>
     </ProjectReference>
-    <ProjectReference Include="D:\Projekte\AtomicRadio\atomicradio-ts3audiobot\TSLib\TSLib.csproj">
+    <ProjectReference Include="..\TSLib\TSLib.csproj">
       <Private>false</Private>
     </ProjectReference>
   </ItemGroup>
