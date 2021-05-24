@@ -1,0 +1,26 @@
+name: .NET
+
+on:
+  push:
+    branches: [ master ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        targets: [linux-x64, linux-arm, linux-arm64]
+    name: Running build ${{ matrix.targets }} 🌸
+    steps:
+    - uses: actions/checkout@v2
+    - uses: actions/setup-dotnet@v1
+      with:
+        dotnet-version: 3.1.x
+    - name: Build TS3AudioBot
+      run: dotnet publish --framework netcoreapp3.1 --configuration Release --self-contained --runtime ${{ matrix.targets }} TS3AudioBot -p:PublishSingleFile=true,IncludeSymbolsInSingleFile=true,PublishTrimmed=true
+    - name: Copy target data to staging
+      run: mkdir staging && cp -R TS3AudioBot/bin/Release/netcoreapp3.1/${{ matrix.targets }}/publish/* staging/${{ matrix.targets }}
+    - uses: actions/upload-artifact@v2
+      with:
+        name: TS3AudioBot-${{ matrix.targets }}
+        path: staging/${{ matrix.targets }}
