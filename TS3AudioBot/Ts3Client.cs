@@ -55,7 +55,7 @@ namespace TS3AudioBot
 		private readonly LruCache<Uid, ClientDbId> dbIdCache = new LruCache<Uid, ClientDbId>(128);
 		private bool alone = true;
 		private ChannelId? reconnectChannel = null;
-		private ClientId[] ownChannelClients = Array.Empty<ClientId>();
+		public ClientId[] ownChannelClients = Array.Empty<ClientId>();
 
 		public bool Connected => ts3FullClient.Connected;
 		public TsConst ServerConstants => ts3FullClient.ServerConstants;
