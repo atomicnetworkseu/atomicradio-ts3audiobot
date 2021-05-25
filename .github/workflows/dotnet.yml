@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        targets: [win-x64, linux-x64, linux-arm, linux-arm64]
+        targets: [win-x64, linux-x64]
     name: Running build ${{ matrix.targets }} 🌸
     steps:
     - uses: actions/checkout@v2
@@ -27,7 +27,7 @@ jobs:
   build-plugin:
     runs-on: ubuntu-latest
     needs: build
-    name: Running build for plugin 🌸
+    name: Running build for plugin 📁
     steps:
     - uses: actions/checkout@v2
     - uses: actions/setup-dotnet@v1
